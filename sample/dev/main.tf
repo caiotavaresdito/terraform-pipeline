@@ -7,7 +7,7 @@ resource "random_string" "random" {
 }
 
 resource "google_storage_bucket" "auto-expire" {
-  name          = "pipeline-boilerplate-dev-${random_string.random.id}"
+  name          = "pipeline-boilerplate-01-dev-${random_string.random.id}"
   location      = "US"
   force_destroy = true
 }
