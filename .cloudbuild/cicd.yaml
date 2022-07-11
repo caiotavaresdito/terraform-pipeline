@@ -5,7 +5,7 @@ steps:
   args: 
   - '-c'
   - |
-      cd environments/$_ENV
+      cd sample/$_ENV
       echo "*************** TERRAFORM INIT ******************"
       echo "* Environment: $_ENV "
       echo "*************************************************"
@@ -18,11 +18,11 @@ steps:
   args: 
   - '-c'
   - |
-      terraform fmt -recursive -check environments/$_ENV
+      terraform fmt -recursive -check sample/$_ENV
       if [ $? -ne 0 ]
       then
         echo "************************** TERRAFORM LINTING **************************"
-        echo "* Format the code with: terraform fmt -recursive environments/$_ENV/ *"
+        echo "* Format the code with: terraform fmt -recursive sample/$_ENV/ *"
         echo "***********************************************************************"
         exit 1
       fi
@@ -33,7 +33,7 @@ steps:
   args: 
   - '-c'
   - |
-      cd environments/$_ENV
+      cd sample/$_ENV
       echo ""
       echo "************* TERRAFORM VALIDATE ****************"
       echo "* Environment: $_ENV "
@@ -47,7 +47,7 @@ steps:
   args: 
   - '-c'
   - |
-      cd environments/$_ENV
+      cd sample/$_ENV
       echo ""
       echo "*************** TERRAFORM PLAN ******************"
       echo "* Environment: $_ENV "
@@ -95,14 +95,14 @@ steps:
       $$truncated_message
       "
 
-- id: 'tf apply'
+- id: 'Terraform Apply'
   name: 'hashicorp/terraform:1.1.0'
   entrypoint: 'sh'
   args: 
   - '-c'
   - |
       if [ "$BRANCH_NAME" = "main" ]; then
-        cd environments/$_ENV
+        cd sample/$_ENV
         echo ""
         echo "*************** TERRAFORM APPLY ******************"
         echo "* Environment: $_ENV "
@@ -112,6 +112,27 @@ steps:
       else
           echo "***** NOT MAIN BRANCH - SKIPPING APPLY *******"
       fi
+
+################################################################################################
+# Production Infra Alerts -> Google Chat (WebHooks) 
+################################################################################################
+
+- id: 'Alert Google Chat - Prod changes'
+  name: 'gcr.io/$PROJECT_ID/gh-cli:latest'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |-
+      if [ $_ENV = "prod" ] && [ "$BRANCH_NAME" != "main" ]; then
+        curl -v -X POST -H 'Content-Type: application/json; charset=UTF-8' -d '{"cards": [{"sections": [{"widgets": [{"textParagraph": {"text": "<b>Infrastructure changes detected in Production!</b> Please open the Pull Request ID ${_PR_NUMBER} and review the Terraform Plan accordingly."}}]}
+        ,{"widgets": [{"buttons": [{"textButton": {"text": "VIEW PULL REQUEST","onClick": {"openLink": {"url": "https://github.com/caiotavaresdito/terraform-pipeline/pull/${_PR_NUMBER}"}}}}
+        ,{"textButton": {"text": "CLOUDBUILD LOGS","onClick": {"openLink": {"url": "https://console.cloud.google.com/cloud-build/builds?organizationId=1045789790239&project=caio-testing"}}}}]}]}]}]}' https://chat.googleapis.com/v1/spaces/AAAAsmmGgrE/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI\&token=IcRSHdLsFX59ygl9QRaLulbJPEwtcm8LuVsPGEVDNWo%3D
+      fi
+
+################################################################################################
+# Production Infra Alerts -> Slack 
+################################################################################################
+
   # - name: 'gcr.io/$PROJECT_ID/gh-cli:latest'
   #   entrypoint: 'bash'
   #   args:
