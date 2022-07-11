@@ -112,23 +112,23 @@ steps:
       else
           echo "***** NOT MAIN BRANCH - SKIPPING APPLY *******"
       fi
-  - name: 'gcr.io/$PROJECT_ID/gh-cli:latest'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |-
-        if [ $_ENV = "prod" ] && [ "$BRANCH_NAME" != "main" ]; then
-            curl -X POST -H 'Content-type: application/json' --data '{
-            "attachments": [{"color": "#ffd966","blocks": [{"type": "header","text": {"type": "plain_text","text": "Infrastructure changes detected in Production!","emoji": true}}
-            ,{"type": "section","text": {"type": "mrkdwn","text": "There is a request to make infrastructure changes in Production. Please take a look at the Terraform plan and review it accordingly."}
-            ,"accessory": {"type": "button","text": {"type": "plain_text","text": "View Plan Output","emoji": true}
-            ,"url": "https://github.com/ny/dmv-virtual-office-iac/pull/${_PR_NUMBER}"}}]}]} ' $$SLACK_INFRA_TOKEN
-        fi
-    secretEnv: ['SLACK_INFRA_TOKEN']
+  # - name: 'gcr.io/$PROJECT_ID/gh-cli:latest'
+  #   entrypoint: 'bash'
+  #   args:
+  #     - '-c'
+  #     - |-
+  #       if [ $_ENV = "prod" ] && [ "$BRANCH_NAME" != "main" ]; then
+  #           curl -X POST -H 'Content-type: application/json' --data '{
+  #           "attachments": [{"color": "#ffd966","blocks": [{"type": "header","text": {"type": "plain_text","text": "Infrastructure changes detected in Production!","emoji": true}}
+  #           ,{"type": "section","text": {"type": "mrkdwn","text": "There is a request to make infrastructure changes in Production. Please take a look at the Terraform plan and review it accordingly."}
+  #           ,"accessory": {"type": "button","text": {"type": "plain_text","text": "View Plan Output","emoji": true}
+  #           ,"url": "https://github.com/<user:org>/<repository-name/${_PR_NUMBER}"}}]}]} ' $$SLACK_INFRA_TOKEN
+  #       fi
+  #   secretEnv: ['SLACK_INFRA_TOKEN']
 
 # Increased timeout to support long operations (eg. GKE Cluster creation/updates)
 timeout: 7200s
-availableSecrets:
-  secretManager:
-    - versionName: projects/$PROJECT_ID/secrets/slack-webhook-infra/versions/latest
-      env: SLACK_INFRA_TOKEN
+# availableSecrets:
+#   secretManager:
+#     - versionName: projects/$PROJECT_ID/secrets/slack-webhook-infra/versions/latest
+#       env: SLACK_INFRA_TOKEN
