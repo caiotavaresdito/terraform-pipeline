@@ -1,0 +1,134 @@
+steps:
+- id: 'Terraform init'
+  name: 'hashicorp/terraform:1.1.0'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+      cd environments/$_ENV
+      echo "*************** TERRAFORM INIT ******************"
+      echo "* Environment: $_ENV "
+      echo "*************************************************"
+      terraform init || exit 1
+      cd /workspace
+
+- id: 'Terraform Linting'
+  name: 'hashicorp/terraform:1.1.0'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+      terraform fmt -recursive -check environments/$_ENV
+      if [ $? -ne 0 ]
+      then
+        echo "************************** TERRAFORM LINTING **************************"
+        echo "* Format the code with: terraform fmt -recursive environments/$_ENV/ *"
+        echo "***********************************************************************"
+        exit 1
+      fi
+
+- id: 'Terraform Validate'
+  name: 'hashicorp/terraform:1.1.0'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+      cd environments/$_ENV
+      echo ""
+      echo "************* TERRAFORM VALIDATE ****************"
+      echo "* Environment: $_ENV "
+      echo "*************************************************"
+      terraform validate || exit 1
+      cd /workspace
+
+- id: 'Terraform Plan'
+  name: 'hashicorp/terraform:1.1.0'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+      cd environments/$_ENV
+      echo ""
+      echo "*************** TERRAFORM PLAN ******************"
+      echo "* Environment: $_ENV "
+      echo "*************************************************"
+      terraform plan -no-color -out /workspace/${COMMIT_SHA}.plan || exit 1
+      terraform show -no-color /workspace/${COMMIT_SHA}.plan > /workspace/${COMMIT_SHA}.txt || exit 1
+      cd /workspace
+
+- id: 'Output Terraform plan to PR'
+  name: 'gcr.io/cloud-builders/gcloud'  
+  entrypoint: /bin/sh
+  args:
+  - '-c'
+  - |
+      if [ "$BRANCH_NAME" != "main" ]; then
+        gcloud secrets versions access latest --secret=github-bot-token --format='get(payload.data)' | tr '_-' '/+' | base64 -d > /workspace/token.txt
+      fi
+
+- name: 'gcr.io/$PROJECT_ID/gh-cli:latest'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |-
+      if [ "$BRANCH_NAME" = "main" ]; then
+        echo ">>> Skipping PR comments on merge"
+        exit 0
+      fi
+      export GITHUB_TOKEN=$(cat token.txt)
+      rm -rf token.txt      
+      read -r -d "" gh_comment_template << EOF
+      <details>
+        <summary>Terraform $_ENV Plan Results</summary>
+
+        \`\`\`
+        %s
+        \`\`\`
+      </details>
+      EOF
+
+      gh_comment=$(printf "$$gh_comment_template" "$(cat /workspace/${COMMIT_SHA}.txt)")
+      # GitHub has a 65535-char comment limit - truncate plan
+      truncated_message=$(echo "${gh_comment:0:65300}")
+      gh pr comment $_PR_NUMBER -b "
+      :rocket:  CODEOWNERS please review the Terraform plan in the $_ENV environment :rocket:
+      $$truncated_message
+      "
+
+- id: 'tf apply'
+  name: 'hashicorp/terraform:1.1.0'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+      if [ "$BRANCH_NAME" = "main" ]; then
+        cd environments/$_ENV
+        echo ""
+        echo "*************** TERRAFORM APPLY ******************"
+        echo "* Environment: $_ENV "
+        echo "**************************************************"
+        terraform apply -auto-approve || exit 1
+        cd /workspace
+      else
+          echo "***** NOT MAIN BRANCH - SKIPPING APPLY *******"
+      fi
+  - name: 'gcr.io/$PROJECT_ID/gh-cli:latest'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |-
+        if [ $_ENV = "prod" ] && [ "$BRANCH_NAME" != "main" ]; then
+            curl -X POST -H 'Content-type: application/json' --data '{
+            "attachments": [{"color": "#ffd966","blocks": [{"type": "header","text": {"type": "plain_text","text": "Infrastructure changes detected in Production!","emoji": true}}
+            ,{"type": "section","text": {"type": "mrkdwn","text": "There is a request to make infrastructure changes in Production. Please take a look at the Terraform plan and review it accordingly."}
+            ,"accessory": {"type": "button","text": {"type": "plain_text","text": "View Plan Output","emoji": true}
+            ,"url": "https://github.com/ny/dmv-virtual-office-iac/pull/${_PR_NUMBER}"}}]}]} ' $$SLACK_INFRA_TOKEN
+        fi
+    secretEnv: ['SLACK_INFRA_TOKEN']
+
+# Increased timeout to support long operations (eg. GKE Cluster creation/updates)
+timeout: 7200s
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/slack-webhook-infra/versions/latest
+      env: SLACK_INFRA_TOKEN
